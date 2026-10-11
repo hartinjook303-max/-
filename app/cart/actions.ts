@@ -1,0 +1,114 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { commerce } from "@/lib/commerce";
+import { getCartCookieJson, setCartCookie } from "@/lib/cookies";
+import { isPreviewHost } from "@/lib/demo-products";
+
+async function isPreviewRequest(): Promise<boolean> {
+	const headerList = await headers();
+	const host = headerList.get("host");
+	if (!isPreviewHost(host)) return false;
+	// Only treat as preview if the originating page also signaled it via referer ?preview=1
+	const referer = headerList.get("referer");
+	if (!referer) return false;
+	try {
+		const url = new URL(referer);
+		return url.searchParams.get("preview") === "1";
+	} catch {
+		return false;
+	}
+}
+
+export async function getCart() {
+	if (await isPreviewRequest()) return null;
+
+	const cartCookie = await getCartCookieJson();
+
+	if (!cartCookie?.id) {
+		return null;
+	}
+
+	try {
+		return await commerce.cartGet({ cartId: cartCookie.id });
+	} catch {
+		return null;
+	}
+}
+
+export async function addToCart(variantId: string, quantity = 1) {
+	if (await isPreviewRequest()) {
+		return { success: true, cart: null };
+	}
+
+	const cartCookie = await getCartCookieJson();
+
+	const cart = await commerce.cartUpsert({
+		cartId: cartCookie?.id,
+		variantId,
+		quantity,
+	});
+
+	if (!cart) {
+		return { success: false, cart: null };
+	}
+
+	if (cart.id !== cartCookie?.id) {
+		await setCartCookie({ id: cart.id });
+	}
+	revalidatePath("/", "layout");
+
+	const fullCart = await commerce.cartGet({ cartId: cart.id });
+
+	return { success: true, cart: fullCart };
+}
+
+export async function removeFromCart(variantId: string) {
+	if (await isPreviewRequest()) {
+		return { success: true, cart: null };
+	}
+
+	const cartCookie = await getCartCookieJson();
+
+	if (!cartCookie?.id) {
+		return { success: false, cart: null };
+	}
+
+	try {
+		// Quantity 0 removes the item; the response is the updated cart
+		const cart = await commerce.cartUpsert({
+			cartId: cartCookie.id,
+			variantId,
+			quantity: 0,
+		});
+		return { success: true, cart };
+	} catch {
+		return { success: false, cart: null };
+	}
+}
+
+export async function setCartQuantity(variantId: string, quantity: number) {
+	if (await isPreviewRequest()) {
+		return { success: true, cart: null };
+	}
+
+	const cartCookie = await getCartCookieJson();
+
+	if (!cartCookie?.id) {
+		return { success: false, cart: null };
+	}
+
+	try {
+		// mode "set" replaces the line quantity atomically; 0 removes the item
+		const cart = await commerce.cartUpsert({
+			cartId: cartCookie.id,
+			variantId,
+			quantity: Math.max(quantity, 0),
+			mode: "set",
+		});
+		return { success: true, cart };
+	} catch {
+		return { success: false, cart: null };
+	}
+}
