@@ -1,0 +1,167 @@
+import { cacheLife } from "next/cache";
+import { YnsLink } from "@/components/yns-link";
+import { commerce, meGetCached } from "@/lib/commerce";
+
+async function FooterBlogLink() {
+	"use cache";
+	cacheLife("hours");
+
+	const me = await meGetCached().catch(() => null);
+	if (!me?.store.settings?.enabledTools?.blog) {
+		return null;
+	}
+
+	return (
+		<li>
+			<YnsLink
+				prefetch={"eager"}
+				href="/blog"
+				className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+			>
+				Blog
+			</YnsLink>
+		</li>
+	);
+}
+
+async function FooterContactLink() {
+	"use cache";
+	cacheLife("hours");
+
+	const me = await meGetCached().catch(() => null);
+	if (!me?.store.settings?.enabledTools?.contactForm) {
+		return null;
+	}
+
+	return (
+		<li>
+			<YnsLink
+				prefetch={"eager"}
+				href="/contact"
+				className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+			>
+				Contact Us
+			</YnsLink>
+		</li>
+	);
+}
+
+async function FooterCollections() {
+	"use cache";
+	cacheLife("hours");
+
+	const collections = await commerce.collectionBrowse({ limit: 5 });
+
+	if (collections.data.length === 0) {
+		return null;
+	}
+
+	return (
+		<div>
+			<h3 className="text-sm font-semibold text-foreground">Collections</h3>
+			<ul className="mt-4 space-y-3">
+				{collections.data.map((collection) => (
+					<li key={collection.id}>
+						<YnsLink
+							prefetch={"eager"}
+							href={`/collection/${collection.slug}`}
+							className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+						>
+							{collection.name}
+						</YnsLink>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
+async function FooterLegalPages() {
+	"use cache";
+	cacheLife("hours");
+
+	const pages = await commerce.legalPageBrowse();
+
+	if (pages.data.length === 0) {
+		return null;
+	}
+
+	return (
+		<div>
+			<h3 className="text-sm font-semibold text-foreground">Legal</h3>
+			<ul className="mt-4 space-y-3">
+				{pages.data.map((page) => (
+					<li key={page.id}>
+						<YnsLink
+							prefetch={"eager"}
+							href={`/legal${page.path}`}
+							className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+						>
+							{page.title}
+						</YnsLink>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
+export function Footer() {
+	return (
+		<footer className="border-t border-border bg-background">
+			<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+				<div className="py-12 sm:py-16 flex flex-col sm:flex-row gap-8 sm:gap-16">
+					{/* Brand */}
+					<div className="sm:max-w-xs">
+						<YnsLink prefetch={"eager"} href="/" className="text-xl font-bold text-foreground">
+							Your Next Store
+						</YnsLink>
+						<p className="mt-4 text-sm text-muted-foreground leading-relaxed">
+							Curated essentials for modern living. Quality products, thoughtfully designed.
+						</p>
+					</div>
+
+					{/* Collections */}
+					<FooterCollections />
+
+					{/* Support */}
+					<div>
+						<h3 className="text-sm font-semibold text-foreground">Support</h3>
+						<ul className="mt-4 space-y-3">
+							<li>
+								<YnsLink
+									prefetch={"eager"}
+									href="/about"
+									className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+								>
+									About Us
+								</YnsLink>
+							</li>
+							<FooterContactLink />
+							<li>
+								<YnsLink
+									prefetch={"eager"}
+									href="/faq"
+									className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+								>
+									FAQ
+								</YnsLink>
+							</li>
+							<FooterBlogLink />
+						</ul>
+					</div>
+
+					{/* Legal */}
+					<FooterLegalPages />
+				</div>
+
+				{/* Bottom bar */}
+				<div className="py-6 border-t border-border">
+					<p className="text-sm text-muted-foreground">
+						&copy; {new Date().getFullYear()} Your Next Store. All rights reserved.
+					</p>
+				</div>
+			</div>
+		</footer>
+	);
+}
