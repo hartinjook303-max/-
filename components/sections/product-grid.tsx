@@ -1,0 +1,144 @@
+import type {
+	APICollectionGetByIdResult,
+	APIProductGetByIdResult,
+	APIProductsBrowseResult,
+} from "commerce-kit";
+import { ArrowRight } from "lucide-react";
+import { cacheLife } from "next/cache";
+import Image from "next/image";
+import { commerce } from "@/lib/commerce";
+import { CURRENCY, LOCALE } from "@/lib/constants";
+import { formatMoney } from "@/lib/money";
+import Link from "next/link";
+
+export type Product = APIProductsBrowseResult["data"][number];
+
+type ProductGridProps = {
+	title?: string;
+	description?: string;
+	products?: (
+		| Product
+		| APICollectionGetByIdResult["productCollections"][number]["product"]
+		| NonNullable<APIProductGetByIdResult>
+	)[];
+	limit?: number;
+	showViewAll?: boolean;
+	viewAllHref?: string;
+};
+
+export async function ProductGrid({
+	title = "WHAT WE OFFER",
+	description = "Handpicked favorites from our collection",
+	products,
+	limit = 8,
+	showViewAll = true,
+	viewAllHref = "/products",
+}: ProductGridProps) {
+	"use cache";
+	cacheLife("minutes");
+
+	const displayProducts = products ?? (await commerce.productBrowse({ active: true, limit })).data;
+
+	return (
+		<section id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+			<div className="flex items-end justify-between mb-8">
+				<div>
+					<h2 className="font-heading text-2xl font-bold uppercase tracking-wide text-foreground">{title}</h2>
+					<p className="mt-1 text-sm text-muted-foreground">{description}</p>
+				</div>
+				{showViewAll && (
+					<Link
+						href={viewAllHref}
+						className="hidden sm:inline-flex items-center gap-1 text-sm font-semibold text-brand hover:text-yellow-600 transition-colors uppercase tracking-wide"
+					>
+						View all
+						<ArrowRight className="h-4 w-4" />
+					</Link>
+				)}
+			</div>
+
+			<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+				{displayProducts.map((product) => {
+					const variants = "variants" in product ? product.variants : null;
+					const firstVariantPrice = variants?.[0] ? BigInt(variants[0].price) : null;
+					const { minPrice, maxPrice } =
+						variants && firstVariantPrice !== null
+							? variants.reduce(
+									(acc, v) => {
+										const price = BigInt(v.price);
+										return {
+											minPrice: price < acc.minPrice ? price : acc.minPrice,
+											maxPrice: price > acc.maxPrice ? price : acc.maxPrice,
+										};
+									},
+									{ minPrice: firstVariantPrice, maxPrice: firstVariantPrice },
+								)
+							: { minPrice: null, maxPrice: null };
+
+					const priceDisplay =
+						variants && variants.length > 1 && minPrice && maxPrice && minPrice !== maxPrice
+							? `${formatMoney({ amount: minPrice, currency: CURRENCY, locale: LOCALE })} - ${formatMoney({ amount: maxPrice, currency: CURRENCY, locale: LOCALE })}`
+							: minPrice
+								? formatMoney({ amount: minPrice, currency: CURRENCY, locale: LOCALE })
+								: null;
+
+					const allImages = [
+						...(product.images ?? []),
+						...(variants
+							?.flatMap((v) => v.images ?? [])
+							.filter((img) => !(product.images ?? []).includes(img)) ?? []),
+					];
+					const primaryImage = allImages[0];
+					const secondaryImage = allImages[1];
+
+					return (
+						<Link
+							key={product.id}
+							href={`/product/${product.slug}`}
+							className="group border border-border hover:border-brand transition-colors"
+						>
+							<div className="relative aspect-square bg-secondary overflow-hidden">
+								{primaryImage && (
+									<Image
+										src={primaryImage}
+										alt={product.name}
+										fill
+										sizes="(max-width: 640px) 50vw, (max-width: 1024px) 50vw, 25vw"
+										className="object-cover transition-opacity duration-500 group-hover:opacity-0"
+									/>
+								)}
+								{secondaryImage && (
+									<Image
+										src={secondaryImage}
+										alt={`${product.name} - alternate view`}
+										fill
+										sizes="(max-width: 640px) 50vw, (max-width: 1024px) 50vw, 25vw"
+										className="object-cover opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+									/>
+								)}
+							</div>
+							<div className="p-3">
+								<h3 className="text-sm font-medium text-foreground group-hover:text-brand transition-colors line-clamp-2">
+									{product.name}
+								</h3>
+								<p className="mt-1 text-sm font-bold text-brand">{priceDisplay}</p>
+							</div>
+						</Link>
+					);
+				})}
+			</div>
+
+			{showViewAll && (
+				<div className="mt-8 text-center sm:hidden">
+					<Link
+						href={viewAllHref}
+						className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:text-yellow-600 transition-colors uppercase tracking-wide"
+					>
+						View all products
+						<ArrowRight className="h-4 w-4" />
+					</Link>
+				</div>
+			)}
+		</section>
+	);
+}
