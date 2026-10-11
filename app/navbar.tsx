@@ -1,0 +1,36 @@
+import { cacheLife } from "next/cache";
+import Link from "next/link";
+import { commerce } from "@/lib/commerce";
+
+export async function Navbar() {
+	"use cache";
+	cacheLife("hours");
+
+	const collections = await commerce.collectionBrowse({ limit: 5 });
+
+	return (
+		<nav className="hidden sm:flex items-center gap-8">
+			<Link
+				href="/"
+				className="text-[13px] font-medium tracking-wide uppercase text-muted-foreground hover:text-primary transition-colors"
+			>
+				Home
+			</Link>
+			<Link
+				href="/products"
+				className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+			>
+				Products
+			</Link>
+			{collections.data.map((collection) => (
+				<Link
+					key={collection.id}
+					href={`/collection/${collection.slug}`}
+					className="text-[13px] font-medium tracking-wide uppercase text-muted-foreground hover:text-primary transition-colors"
+				>
+					{collection.name}
+				</Link>
+			))}
+		</nav>
+	);
+}
