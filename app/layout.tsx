@@ -1,0 +1,261 @@
+import { ArrowRight, Menu, ShoppingCart } from "lucide-react";
+import type { Metadata } from "next";
+import { cacheLife } from "next/cache";
+import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
+import { Suspense } from "react";
+import { CartProvider } from "@/app/cart/cart-context";
+import { CartSidebar } from "@/app/cart/cart-sidebar";
+import { CartButton } from "@/app/cart-button";
+
+import { SearchInput } from "@/app/search-input";
+import { AuthButton } from "@/components/auth-button";
+import { CookieConsent } from "@/components/cookie-consent";
+import { ErrorOverlayRemover, NavigationReporter } from "@/components/devtools";
+import { NewsletterDialog } from "@/components/newsletter-dialog";
+import { ReferralBadge } from "@/components/referral-badge";
+import { Toaster } from "@/components/ui/sonner";
+import { AUTH_ENABLED } from "@/lib/auth-config";
+import { commerce, getCanonicalUrl, getStoreFaviconUrl, meGetCached } from "@/lib/commerce";
+import "@/app/globals.css";
+import { getCartCookieJson } from "@/lib/cookies";
+import { StoreJsonLd } from "@/lib/json-ld";
+
+const geistSans = Geist({
+	variable: "--font-geist-sans",
+	subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+	variable: "--font-geist-mono",
+	subsets: ["latin"],
+});
+
+async function getStoreMetadata(): Promise<Metadata> {
+	"use cache";
+	cacheLife("hours");
+	const me = await meGetCached();
+	const storeName = me.store.name || "Your Next Store";
+	const storeDescription = me.store.settings?.storeDescription || "Your next e-commerce store";
+	const faviconUrl = getStoreFaviconUrl(me.store.settings) ?? "/logo.svg";
+	const storeLogo =
+		typeof me.store.settings?.logo === "string" ? me.store.settings.logo : me.store.settings?.logo?.imageUrl;
+	const ogImage = me.store.settings?.ogimage || storeLogo || "/logo.svg";
+
+	return {
+		title: {
+			default: storeName,
+			template: `%s — ${storeName}`,
+		},
+		description: storeDescription,
+		applicationName: storeName,
+		alternates: {
+			canonical: "/",
+		},
+		openGraph: {
+			type: "website",
+			siteName: storeName,
+			title: storeName,
+			description: storeDescription,
+			url: "/",
+			images: [{ url: ogImage, alt: storeName }],
+		},
+		twitter: {
+			card: "summary_large_image",
+			title: storeName,
+			description: storeDescription,
+			images: [ogImage],
+		},
+		robots: {
+			index: true,
+			follow: true,
+			googleBot: {
+				index: true,
+				follow: true,
+				"max-image-preview": "large",
+				"max-snippet": -1,
+				"max-video-preview": -1,
+			},
+		},
+		icons: {
+			icon: [
+				{ url: faviconUrl, sizes: "any", type: "image/svg+xml" },
+				{ url: faviconUrl, sizes: "192x192", type: "image/png" },
+			],
+			apple: [{ url: faviconUrl, sizes: "180x180" }],
+			shortcut: faviconUrl,
+		},
+		manifest: "/manifest.webmanifest",
+	};
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+	const metadata = await getStoreMetadata();
+	// URL instances can't cross the "use cache" serialization boundary, so
+	// metadataBase is attached outside the cached scope (env-only, no IO).
+	return { ...metadata, metadataBase: new URL(getCanonicalUrl()) };
+}
+
+function CartButtonFallback() {
+	return (
+		<div className="h-full flex items-center justify-center px-6">
+			<ShoppingCart className="w-5 h-5 opacity-20" />
+		</div>
+	);
+}
+
+async function getInitialCart() {
+	const cartCookie = await getCartCookieJson();
+
+	if (!cartCookie?.id) {
+		return { cart: null, cartId: null };
+	}
+
+	try {
+		const cart = await commerce.cartGet({ cartId: cartCookie.id });
+		return { cart: cart ?? null, cartId: cartCookie.id };
+	} catch {
+		return { cart: null, cartId: cartCookie.id };
+	}
+}
+
+async function CartProviderWrapper({ children }: { children: React.ReactNode }) {
+	const { cart, cartId } = await getInitialCart();
+
+	const isStaging = process.env.YNS_API_KEY?.startsWith("sk-s-");
+	const baseUrl = isStaging ? "https://yns.cx" : "https://yns.store";
+
+	return (
+		<CartProvider initialCart={cart} initialCartId={cartId}>
+			{/* Grain Overlay */}
+			<div className="grain-overlay" />
+
+			<div className="min-h-screen flex flex-col border-x border-foreground/10 max-w-[1600px] mx-auto relative z-10">
+				{/* Brutalist Navigation */}
+				<nav className="grid grid-cols-2 md:grid-cols-12 border-b border-foreground/10 h-20 items-center">
+					{/* Status Indicator */}
+					<div className="col-span-1 md:col-span-3 h-full flex items-center px-6 border-r border-foreground/10 group cursor-pointer hover:bg-secondary/50 transition-colors">
+						<span className="font-mono text-primary text-xs mr-4 tracking-widest">STATUS</span>
+						<div className="relative w-8 h-8 border border-primary flex items-center justify-center animate-spin-slow">
+							<div className="w-2 h-2 bg-primary" />
+						</div>
+						<span className="ml-3 font-bold text-sm tracking-widest group-hover:text-primary transition-colors">
+							LIVE
+						</span>
+					</div>
+
+					{/* Location & Date */}
+					<div className="hidden md:flex col-span-5 h-full items-center px-6 border-r border-foreground/10 justify-between">
+						<div className="flex flex-col">
+							<span className="font-mono text-[10px] uppercase opacity-60">Location</span>
+							<span className="text-sm font-bold">SAN FRANCISCO, CA</span>
+						</div>
+						<div className="flex flex-col text-right">
+							<span className="font-mono text-[10px] uppercase opacity-60">Date</span>
+							<span className="text-sm font-bold text-primary">OCT 24-26, 2024</span>
+						</div>
+					</div>
+
+					{/* Next Event */}
+					<Link
+						href="#tickets"
+						className="hidden md:flex col-span-2 h-full items-center justify-center border-r border-foreground/10 hover:bg-primary hover:text-white transition-colors cursor-pointer group"
+					>
+						<span className="font-mono text-xs uppercase tracking-widest">TICKETS</span>
+						<ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+					</Link>
+
+					{/* Search + Auth + Cart */}
+					<div className="hidden md:flex col-span-1 h-full items-center justify-center border-r border-foreground/10 gap-2">
+						<Suspense>
+							<SearchInput />
+						</Suspense>
+						{AUTH_ENABLED && <AuthButton />}
+						<Suspense fallback={<CartButtonFallback />}>
+							<CartButton />
+						</Suspense>
+					</div>
+
+					{/* Menu Button */}
+					<div className="col-span-1 md:col-span-1 h-full flex items-center justify-center cursor-pointer hover:bg-secondary/50 transition-colors relative overflow-hidden group">
+						<Menu className="w-5 h-5 group-hover:scale-110 transition-transform" />
+						<span className="ml-2 font-mono font-bold text-sm hidden sm:inline">MENU</span>
+					</div>
+				</nav>
+
+				{/* Main Content */}
+				<div className="flex-1">{children}</div>
+
+				{/* Brutalist Footer */}
+				<footer className="grid grid-cols-1 md:grid-cols-12 border-t border-foreground/10 py-8">
+					<div className="col-span-1 md:col-span-4 px-6 md:px-12 flex items-center">
+						<span className="font-bold text-lg tracking-tight">TECH SUMMIT 24</span>
+					</div>
+					<div className="col-span-1 md:col-span-8 px-6 md:px-12 flex flex-col md:flex-row justify-between items-center text-sm font-mono opacity-60 mt-4 md:mt-0">
+						<div className="flex space-x-6">
+							<span className="hover:text-primary transition-colors cursor-pointer">Instagram</span>
+							<span className="hover:text-primary transition-colors cursor-pointer">Twitter</span>
+							<span className="hover:text-primary transition-colors cursor-pointer">LinkedIn</span>
+						</div>
+						<div className="mt-4 md:mt-0">&copy; 2024 Tech Summit Series. All rights reserved.</div>
+					</div>
+				</footer>
+			</div>
+			<CartSidebar baseUrl={baseUrl} />
+			<ReferralBadge />
+		</CartProvider>
+	);
+}
+
+async function getHtmlLang(): Promise<string> {
+	try {
+		const me = await meGetCached();
+		return me.store.settings?.defaultLanguage?.split("-")[0] ?? "en";
+	} catch {
+		return "en";
+	}
+}
+
+async function NewsletterPopupSection() {
+	const me = await meGetCached();
+	if (!me.store.settings?.enabledTools?.newsletterPopup) {
+		return null;
+	}
+	return <NewsletterDialog settings={me.store.settings?.newsletterPopup} />;
+}
+
+export default async function RootLayout({
+	children,
+}: Readonly<{
+	children: React.ReactNode;
+}>) {
+	const env = process.env.VERCEL_ENV || "development";
+	const lang = await getHtmlLang();
+
+	return (
+		<html lang={lang}>
+			<body className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-x-hidden`}>
+				{/* DO NOT REMOVE / REORDER: required for GDPR + GTM Consent Mode v2. Must stay at top of <body>. */}
+				<Suspense>
+					<CookieConsent />
+				</Suspense>
+				<Suspense>
+					<StoreJsonLd />
+				</Suspense>
+				<Suspense fallback={null}>
+					<CartProviderWrapper>{children}</CartProviderWrapper>
+				</Suspense>
+				<Suspense>
+					<NewsletterPopupSection />
+				</Suspense>
+				<Toaster richColors position="top-center" />
+				{env === "development" && (
+					<>
+						<NavigationReporter />
+						<ErrorOverlayRemover />
+					</>
+				)}
+			</body>
+		</html>
+	);
+}
